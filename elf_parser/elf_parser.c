@@ -3,16 +3,16 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-Elf32_Ehdr *parse_elf_header(FILE *file) {
+Elf64_Ehdr *parse_elf_header(FILE *file) {
 
   int rc;
-  Elf32_Ehdr *elf_hdr = malloc(sizeof(Elf32_Ehdr));
+  Elf64_Ehdr *elf_hdr = malloc(sizeof(Elf64_Ehdr));
   DIE(elf_hdr == NULL, "malloc error");
 
   // this value will help restore the file position
   long current_pos = ftell(file);
 
-  rc = fread(elf_hdr, sizeof(Elf32_Ehdr), 1, file);
+  rc = fread(elf_hdr, sizeof(Elf64_Ehdr), 1, file);
   DIE(rc != 1, "fread error");
 
   // reset file position
@@ -22,7 +22,7 @@ Elf32_Ehdr *parse_elf_header(FILE *file) {
   return elf_hdr;
 }
 
-int check_elf_identification(const Elf32_Ehdr *elf_header) {
+int check_elf_identification(const Elf64_Ehdr *elf_header) {
   if (elf_header->e_ident[0] != 0x7f) {
     return -1;
   }
@@ -39,15 +39,43 @@ int check_elf_identification(const Elf32_Ehdr *elf_header) {
   return 0;
 }
 
-Elf32_Shdr *get_string_tbl_section_hdr(FILE *file, Elf32_Ehdr *elf_hdr) {
+Elf64_Shdr *get_symbol_tbl_section_hdr(FILE *file, Elf64_Ehdr *elf_hdr) {
+  int rc;
+  // this value will help restore the file position
+  long current_pos = ftell(file);
+  Elf64_Shdr *section_hdr = malloc(sizeof(Elf64_Shdr));
+  DIE(section_hdr == NULL, "malloc error");
+
+  // we will iterate through each section
+  // start at the first one
+  rc = fseek(file, elf_hdr->e_shoff, SEEK_SET);
+  DIE(rc != 0, "fseek error");
+
+  for (int i = 0; i < elf_hdr->e_shnum; i++) {
+    rc = fread(section_hdr, sizeof(Elf64_Shdr), 1, file);
+    DIE(rc != 1, "fread error");
+
+    if (section_hdr->sh_type == SHT_SYMTAB) {
+      break;
+    }
+  }
+
+  // reset file position
+  rc = fseek(file, current_pos, SEEK_SET);
+  DIE(rc != 0, "fseek error");
+
+  return section_hdr;
+}
+
+Elf64_Shdr *get_string_tbl_section_hdr(FILE *file, Elf64_Ehdr *elf_hdr) {
   // We need to retrieve the string table, which is a section
   // elf_header->e_shstrndx is the index in the section "array"
 
   int rc;
-  Elf32_Half string_table_index = 0;
+  Elf64_Half string_table_index = 0;
   // this value will help restore the file position
   long current_pos = ftell(file);
-  Elf32_Shdr *section_hdr = malloc(sizeof(Elf32_Shdr));
+  Elf64_Shdr *section_hdr = malloc(sizeof(Elf64_Shdr));
   DIE(section_hdr == NULL, "malloc error");
 
   if (elf_hdr->e_shstrndx == SHN_UNDEF) {
@@ -60,7 +88,7 @@ Elf32_Shdr *get_string_tbl_section_hdr(FILE *file, Elf32_Ehdr *elf_hdr) {
     rc = fseek(file, elf_hdr->e_shoff, SEEK_SET);
     DIE(rc != 0, "fseek error");
 
-    rc = fread(section_hdr, sizeof(Elf32_Shdr), 1, file);
+    rc = fread(section_hdr, sizeof(Elf64_Shdr), 1, file);
     DIE(rc < 0, "fread error");
 
     DIE(section_hdr->sh_link == 0,
@@ -72,12 +100,12 @@ Elf32_Shdr *get_string_tbl_section_hdr(FILE *file, Elf32_Ehdr *elf_hdr) {
 
   // we set the cursor at the section holding the information about the string
   // table
-  rc = fseek(file, elf_hdr->e_shoff + (string_table_index * sizeof(Elf32_Shdr)),
+  rc = fseek(file, elf_hdr->e_shoff + (string_table_index * sizeof(Elf64_Shdr)),
              SEEK_SET);
   DIE(rc != 0, "fseek error");
 
   // read the string table section header
-  rc = fread(section_hdr, sizeof(Elf32_Shdr), 1, file);
+  rc = fread(section_hdr, sizeof(Elf64_Shdr), 1, file);
   DIE(rc != 1, "fread error");
 
   DIE(section_hdr->sh_type != SHT_STRTAB, "Section must be string table");

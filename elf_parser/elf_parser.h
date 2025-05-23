@@ -6,13 +6,16 @@
 #include <stdio.h>
 
 // returns the file's elf header
-Elf32_Ehdr *parse_elf_header(FILE *file);
+Elf64_Ehdr *parse_elf_header(FILE *file);
 
 // returns 0 if the elf file is truly elf format
-int check_elf_identification(const Elf32_Ehdr *elf_header);
+int check_elf_identification(const Elf64_Ehdr *elf_header);
 
 // returns the string section header
-Elf32_Shdr *get_string_tbl_section_hdr(FILE *file, Elf32_Ehdr *elf_hdr);
+Elf64_Shdr *get_string_tbl_section_hdr(FILE *file, Elf64_Ehdr *elf_hdr);
+
+// returns the symbol table section header
+Elf64_Shdr *get_symbol_tbl_section_hdr(FILE *file, Elf64_Ehdr *elf_hdr);
 
 #define DIE(assertion, call_description)                                       \
   do {                                                                         \

@@ -13,6 +13,9 @@ int main(int argc, char *argv[]) {
   FILE *file = fopen(argv[1], "r");
   DIE(file == NULL, "fopen error");
 
-  Elf32_Ehdr *elf_hdr = parse_elf_header(file);
-  printf("%d\n", elf_hdr->e_ehsize);
+  Elf64_Ehdr *elf_hdr = parse_elf_header(file);
+  Elf64_Shdr *sym_sec_hdr = get_symbol_tbl_section_hdr(file, elf_hdr);
+
+  int nr_entries = sym_sec_hdr->sh_size / sym_sec_hdr->sh_entsize;
+  printf("nr entries %d\n", nr_entries);
 }
