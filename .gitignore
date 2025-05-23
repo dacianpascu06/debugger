@@ -1,0 +1,5 @@
+*.o
+!elf[0-9]*.asm
+elf[0-9]
+debugger
+main.o
