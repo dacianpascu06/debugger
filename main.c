@@ -13,9 +13,15 @@ int main(int argc, char *argv[]) {
   FILE *file = fopen(argv[1], "r");
   DIE(file == NULL, "fopen error");
 
-  Elf64_Ehdr *elf_hdr = parse_elf_header(file);
-  Elf64_Shdr *sym_sec_hdr = get_symbol_tbl_section_hdr(file, elf_hdr);
+  ElfFile *elf_file = parse_elf_file(file);
+  if (elf_file == NULL) {
+    printf("FAILED\n");
+  }
+  for (int i = 0; i < elf_file->sym_num; i++) {
+    printf("%s\n", elf_file->symbol_names[i]);
+  }
 
-  int nr_entries = sym_sec_hdr->sh_size / sym_sec_hdr->sh_entsize;
-  printf("nr entries %d\n", nr_entries);
+  rc = destroy_elf_file(elf_file);
+  fclose(file);
+  return rc;
 }

@@ -2,24 +2,48 @@
 #include <elf.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
-Elf64_Ehdr *parse_elf_header(FILE *file) {
+ElfFile *parse_elf_file(FILE *file) {
+  int rc;
+  ElfFile *elf_file = malloc(sizeof(ElfFile));
+  RETURN_FAILED(elf_file == NULL, NULL);
+  rc = parse_elf_header(file, elf_file);
+  RETURN_FAILED(rc != 0, NULL);
+  rc = check_elf_identification(elf_file->elf_hdr);
+  RETURN_FAILED(rc != 0, NULL);
+  rc = parse_elf_sections(file, elf_file);
+  RETURN_FAILED(rc != 0, NULL);
+  rc = parse_elf_shstrtab(file, elf_file);
+  RETURN_FAILED(rc != 0, NULL);
+  rc = parse_elf_section_names(file, elf_file);
+  RETURN_FAILED(rc != 0, NULL);
+  rc = parse_symbols(file, elf_file);
+  RETURN_FAILED(rc != 0, NULL);
+  rc = parse_symbol_names(file, elf_file);
+  RETURN_FAILED(rc != 0, NULL);
+
+  return elf_file;
+}
+
+int parse_elf_header(FILE *file, ElfFile *elf_file) {
 
   int rc;
-  Elf64_Ehdr *elf_hdr = malloc(sizeof(Elf64_Ehdr));
-  DIE(elf_hdr == NULL, "malloc error");
+  elf_file->elf_hdr = malloc(sizeof(Elf64_Ehdr));
+
+  RETURN_FAILED(elf_file->elf_hdr == NULL, -1);
 
   // this value will help restore the file position
   long current_pos = ftell(file);
 
-  rc = fread(elf_hdr, sizeof(Elf64_Ehdr), 1, file);
-  DIE(rc != 1, "fread error");
+  rc = fread(elf_file->elf_hdr, sizeof(Elf64_Ehdr), 1, file);
+  RETURN_FAILED(rc != 1, -1);
 
   // reset file position
   rc = fseek(file, current_pos, SEEK_SET);
-  DIE(rc != 0, "fseek error");
+  RETURN_FAILED(rc != 0, -1);
 
-  return elf_hdr;
+  return 0;
 }
 
 int check_elf_identification(const Elf64_Ehdr *elf_header) {
@@ -38,81 +62,177 @@ int check_elf_identification(const Elf64_Ehdr *elf_header) {
 
   return 0;
 }
+int parse_elf_sections(FILE *file, ElfFile *elf_file) {
 
-Elf64_Shdr *get_symbol_tbl_section_hdr(FILE *file, Elf64_Ehdr *elf_hdr) {
   int rc;
+
+  elf_file->elf_sections =
+      malloc(sizeof(Elf64_Shdr *) * elf_file->elf_hdr->e_shnum);
+  RETURN_FAILED(elf_file->elf_sections == NULL, -1);
+
+  for (int i = 0; i < elf_file->elf_hdr->e_shnum; i++) {
+    elf_file->elf_sections[i] = malloc(sizeof(Elf64_Shdr));
+    RETURN_FAILED(elf_file->elf_sections[i] == NULL, -1);
+  }
+
   // this value will help restore the file position
   long current_pos = ftell(file);
-  Elf64_Shdr *section_hdr = malloc(sizeof(Elf64_Shdr));
-  DIE(section_hdr == NULL, "malloc error");
 
-  // we will iterate through each section
-  // start at the first one
-  rc = fseek(file, elf_hdr->e_shoff, SEEK_SET);
-  DIE(rc != 0, "fseek error");
+  rc = fseek(file, elf_file->elf_hdr->e_shoff, SEEK_SET);
+  RETURN_FAILED(rc != 0, -1);
 
-  for (int i = 0; i < elf_hdr->e_shnum; i++) {
-    rc = fread(section_hdr, sizeof(Elf64_Shdr), 1, file);
-    DIE(rc != 1, "fread error");
+  for (int i = 0; i < elf_file->elf_hdr->e_shnum; i++) {
+    rc = fread(elf_file->elf_sections[i], sizeof(Elf64_Shdr), 1, file);
+    RETURN_FAILED(rc != 1, -1);
 
-    if (section_hdr->sh_type == SHT_SYMTAB) {
-      break;
+    if (elf_file->elf_sections[i]->sh_type == SHT_SYMTAB) {
+      elf_file->symbol_section = elf_file->elf_sections[i];
     }
   }
 
   // reset file position
   rc = fseek(file, current_pos, SEEK_SET);
-  DIE(rc != 0, "fseek error");
+  RETURN_FAILED(rc != 0, -1);
 
-  return section_hdr;
+  return 0;
 }
 
-Elf64_Shdr *get_string_tbl_section_hdr(FILE *file, Elf64_Ehdr *elf_hdr) {
-  // We need to retrieve the string table, which is a section
-  // elf_header->e_shstrndx is the index in the section "array"
-
-  int rc;
+int parse_elf_shstrtab(FILE *file, ElfFile *elf_file) {
   Elf64_Half string_table_index = 0;
-  // this value will help restore the file position
-  long current_pos = ftell(file);
-  Elf64_Shdr *section_hdr = malloc(sizeof(Elf64_Shdr));
-  DIE(section_hdr == NULL, "malloc error");
-
-  if (elf_hdr->e_shstrndx == SHN_UNDEF) {
+  if (elf_file->elf_hdr->e_shstrndx == SHN_UNDEF) {
     // The file has no string section, this is possible if the elf file has been
     // stripped
-  } else if (elf_hdr->e_shstrndx == SHN_XINDEX) {
+  } else if (elf_file->elf_hdr->e_shstrndx == SHN_XINDEX) {
     // the index of the string table is found in the first section header
-    // we move the cursor to the first section header
-
-    rc = fseek(file, elf_hdr->e_shoff, SEEK_SET);
-    DIE(rc != 0, "fseek error");
-
-    rc = fread(section_hdr, sizeof(Elf64_Shdr), 1, file);
-    DIE(rc < 0, "fread error");
-
-    DIE(section_hdr->sh_link == 0,
-        "First section header must hold the value to the string table");
-    string_table_index = section_hdr->sh_link;
+    string_table_index = elf_file->elf_sections[0]->sh_link;
+    RETURN_FAILED(string_table_index == 0, -1);
   } else {
-    string_table_index = elf_hdr->e_shstrndx;
+    string_table_index = elf_file->elf_hdr->e_shstrndx;
   }
+  elf_file->shstrtab_section = elf_file->elf_sections[string_table_index];
+  RETURN_FAILED(elf_file->shstrtab_section->sh_type != SHT_STRTAB, -1);
+  return 0;
+}
 
-  // we set the cursor at the section holding the information about the string
-  // table
-  rc = fseek(file, elf_hdr->e_shoff + (string_table_index * sizeof(Elf64_Shdr)),
-             SEEK_SET);
-  DIE(rc != 0, "fseek error");
+int parse_elf_section_names(FILE *file, ElfFile *elf_file) {
+  int rc;
+  // this value will help restore the file position
+  long current_pos = ftell(file);
 
-  // read the string table section header
-  rc = fread(section_hdr, sizeof(Elf64_Shdr), 1, file);
-  DIE(rc != 1, "fread error");
+  // we are gonna read the whole section in a buffer
+  char *buffer = malloc(elf_file->shstrtab_section->sh_size);
 
-  DIE(section_hdr->sh_type != SHT_STRTAB, "Section must be string table");
+  rc = fseek(file, elf_file->shstrtab_section->sh_offset, SEEK_SET);
+  RETURN_FAILED(rc != 0, -1);
+
+  rc = fread(buffer, elf_file->shstrtab_section->sh_size, 1, file);
+  RETURN_FAILED(rc != 1, -1);
+
+  // the buffer now contains nr_of_sections * null terminated strings
+  elf_file->section_names = malloc(elf_file->elf_hdr->e_shnum * sizeof(char *));
+  RETURN_FAILED(elf_file->section_names == NULL, -1);
+
+  rc = parse_null_terminated_strings(elf_file->section_names, buffer,
+                                     elf_file->shstrtab_section->sh_size);
+  RETURN_FAILED(rc != 0, -1);
+
+  free(buffer);
 
   // reset file position
   rc = fseek(file, current_pos, SEEK_SET);
-  DIE(rc != 0, "fseek error");
+  RETURN_FAILED(rc != 0, -1);
 
-  return section_hdr;
+  return 0;
+}
+
+int parse_null_terminated_strings(char **names, char *buffer, int buffer_size) {
+  int count = 0;
+  int i = 0;
+  while (i < buffer_size) {
+    int len = strlen(&buffer[i]);
+    names[count] = malloc(len + 1);
+    RETURN_FAILED(names[count] == NULL, -1);
+    memcpy(names[count], &buffer[i], len + 1);
+    i += len + 1;
+    count++;
+  }
+  return 0;
+}
+
+int parse_symbols(FILE *file, ElfFile *elf_file) {
+  int rc;
+  // this value will help restore the file position
+  long current_pos = ftell(file);
+
+  // number of symbolsd
+  elf_file->sym_num =
+      elf_file->symbol_section->sh_size / elf_file->symbol_section->sh_entsize;
+
+  elf_file->symbols = malloc(sizeof(Elf64_Sym *) * elf_file->sym_num);
+  RETURN_FAILED(elf_file->symbols == NULL, -1);
+
+  rc = fseek(file, elf_file->symbol_section->sh_offset, SEEK_SET);
+  RETURN_FAILED(rc != 0, -1);
+
+  for (int i = 0; i < elf_file->sym_num; i++) {
+    elf_file->symbols[i] = malloc(sizeof(Elf64_Sym));
+    RETURN_FAILED(elf_file->symbols[i] == NULL, -1);
+    rc = fread(elf_file->symbols[i], sizeof(Elf64_Sym), 1, file);
+    RETURN_FAILED(rc != 1, -1);
+  }
+
+  elf_file->symbol_str_tbl_section =
+      elf_file->elf_sections[elf_file->symbol_section->sh_link];
+  RETURN_FAILED(elf_file->symbol_str_tbl_section->sh_type != SHT_STRTAB, -1);
+
+  // reset file position
+  rc = fseek(file, current_pos, SEEK_SET);
+  RETURN_FAILED(rc != 0, -1);
+  return 0;
+}
+
+int parse_symbol_names(FILE *file, ElfFile *elf_file) {
+  int rc;
+  // this value will help restore the file position
+  long current_pos = ftell(file);
+
+  elf_file->symbol_names = malloc(sizeof(char *) * elf_file->sym_num);
+
+  char *buffer = malloc(elf_file->symbol_str_tbl_section->sh_size);
+  RETURN_FAILED(buffer == NULL, -1);
+
+  rc = fseek(file, elf_file->symbol_str_tbl_section->sh_offset, SEEK_SET);
+  RETURN_FAILED(rc != 0, -1);
+
+  // read the symbol names from the file
+  rc = fread(buffer, elf_file->symbol_str_tbl_section->sh_size, 1, file);
+  RETURN_FAILED(rc != 1, -1);
+
+  rc = parse_null_terminated_strings(elf_file->symbol_names, buffer,
+                                     elf_file->symbol_str_tbl_section->sh_size);
+  RETURN_FAILED(rc != 0, -1);
+
+  free(buffer);
+
+  rc = fseek(file, current_pos, SEEK_SET);
+  RETURN_FAILED(rc != 0, -1);
+  return 0;
+}
+
+int destroy_elf_file(ElfFile *elf_file) {
+  for (int i = 0; i < elf_file->sym_num; i++) {
+    free(elf_file->symbol_names[i]);
+    free(elf_file->symbols[i]);
+  }
+  free(elf_file->symbols);
+  free(elf_file->symbol_names);
+  for (int i = 0; i < elf_file->elf_hdr->e_shnum; i++) {
+    free(elf_file->section_names[i]);
+    free(elf_file->elf_sections[i]);
+  }
+  free(elf_file->section_names);
+  free(elf_file->elf_sections);
+  free(elf_file->elf_hdr);
+  free(elf_file);
+  return 0;
 }

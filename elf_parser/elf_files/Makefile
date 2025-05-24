@@ -1,8 +1,8 @@
 ASM       := nasm
-ASFLAGS   := -f elf32
+ASFLAGS   := -f elf64
 
 LD        := ld
-LDFLAGS   := -m elf_i386 -static -nostdlib --no-pie
+LDFLAGS   := -m elf_x86_64 -static -nostdlib --no-pie
 
 # collect all .asm files and derive .o and target names
 ASM_SRCS  := $(wildcard *.asm)

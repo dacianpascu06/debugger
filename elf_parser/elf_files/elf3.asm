@@ -6,13 +6,13 @@ section .text
     global main
 
 main:
-    mov eax, 4          
-    mov ebx, 1         
-    mov ecx, msg      
-    mov edx, len     
-    int 0x80        
+    mov rax, 1              
+    mov rdi, 1             
+    mov rsi, msg          
+    mov rdx, len         
+    syscall
 
-    mov eax, 1     
-    xor ebx, ebx        
-    int 0x80
+    mov rax, 60         
+    xor rdi, rdi       
+    syscall
 
