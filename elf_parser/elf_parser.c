@@ -8,6 +8,13 @@ ElfFile *parse_elf_file(FILE *file) {
   int rc;
   ElfFile *elf_file = malloc(sizeof(ElfFile));
   RETURN_FAILED(elf_file == NULL, NULL);
+
+  elf_file->elf_hdr = NULL;
+  elf_file->elf_sections = NULL;
+  elf_file->section_names = NULL;
+  elf_file->symbols = NULL;
+  elf_file->symbol_names = NULL;
+
   rc = parse_elf_header(file, elf_file);
   RETURN_FAILED(rc != 0, NULL);
   rc = check_elf_identification(elf_file->elf_hdr);
@@ -121,6 +128,7 @@ int parse_elf_section_names(FILE *file, ElfFile *elf_file) {
 
   // we are gonna read the whole section in a buffer
   char *buffer = malloc(elf_file->shstrtab_section->sh_size);
+  RETURN_FAILED(buffer == NULL, -1);
 
   rc = fseek(file, elf_file->shstrtab_section->sh_offset, SEEK_SET);
   RETURN_FAILED(rc != 0, -1);
@@ -132,8 +140,7 @@ int parse_elf_section_names(FILE *file, ElfFile *elf_file) {
   elf_file->section_names = malloc(elf_file->elf_hdr->e_shnum * sizeof(char *));
   RETURN_FAILED(elf_file->section_names == NULL, -1);
 
-  rc = parse_null_terminated_strings(elf_file->section_names, buffer,
-                                     elf_file->shstrtab_section->sh_size);
+  rc = extract_section_names(elf_file, buffer);
   RETURN_FAILED(rc != 0, -1);
 
   free(buffer);
@@ -145,16 +152,16 @@ int parse_elf_section_names(FILE *file, ElfFile *elf_file) {
   return 0;
 }
 
-int parse_null_terminated_strings(char **names, char *buffer, int buffer_size) {
-  int count = 0;
-  int i = 0;
-  while (i < buffer_size) {
-    int len = strlen(&buffer[i]);
-    names[count] = malloc(len + 1);
-    RETURN_FAILED(names[count] == NULL, -1);
-    memcpy(names[count], &buffer[i], len + 1);
-    i += len + 1;
-    count++;
+int extract_section_names(ElfFile *elf, char *buffer) {
+  for (int i = 0; i < elf->elf_hdr->e_shnum; i++) {
+
+    char *name = buffer + elf->elf_sections[i]->sh_name;
+    int len = strlen(name);
+
+    elf->section_names[i] = malloc(len + 1);
+    RETURN_FAILED(elf->section_names[i] == NULL, -1);
+
+    memcpy(elf->section_names[i], name, len);
   }
   return 0;
 }
@@ -164,7 +171,7 @@ int parse_symbols(FILE *file, ElfFile *elf_file) {
   // this value will help restore the file position
   long current_pos = ftell(file);
 
-  // number of symbolsd
+  // number of symbols
   elf_file->sym_num =
       elf_file->symbol_section->sh_size / elf_file->symbol_section->sh_entsize;
 
@@ -191,12 +198,34 @@ int parse_symbols(FILE *file, ElfFile *elf_file) {
   return 0;
 }
 
+int extract_symbol_names(ElfFile *elf_file, char *buffer) {
+  for (int i = 0; i < elf_file->sym_num; i++) {
+
+    char *name = buffer + elf_file->symbols[i]->st_name;
+    int len = strlen(name);
+
+    elf_file->symbol_names[i] = malloc(len + 1);
+    RETURN_FAILED(elf_file->symbol_names[i] == NULL, -1);
+
+    memcpy(elf_file->symbol_names[i], name, len);
+  }
+  return 0;
+}
+
 int parse_symbol_names(FILE *file, ElfFile *elf_file) {
   int rc;
+
+  // check if we have symbols
+  if (elf_file->sym_num == 0 || elf_file->symbols == NULL) {
+    elf_file->symbol_names = NULL;
+    return 0;
+  }
+
   // this value will help restore the file position
   long current_pos = ftell(file);
 
   elf_file->symbol_names = malloc(sizeof(char *) * elf_file->sym_num);
+  RETURN_FAILED(elf_file->symbol_names == NULL, -1);
 
   char *buffer = malloc(elf_file->symbol_str_tbl_section->sh_size);
   RETURN_FAILED(buffer == NULL, -1);
@@ -208,8 +237,7 @@ int parse_symbol_names(FILE *file, ElfFile *elf_file) {
   rc = fread(buffer, elf_file->symbol_str_tbl_section->sh_size, 1, file);
   RETURN_FAILED(rc != 1, -1);
 
-  rc = parse_null_terminated_strings(elf_file->symbol_names, buffer,
-                                     elf_file->symbol_str_tbl_section->sh_size);
+  rc = extract_symbol_names(elf_file, buffer);
   RETURN_FAILED(rc != 0, -1);
 
   free(buffer);

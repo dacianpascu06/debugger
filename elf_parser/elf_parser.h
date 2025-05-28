@@ -43,10 +43,13 @@ int parse_elf_section_names(FILE *file, ElfFile *elf_file);
 int parse_symbol_names(FILE *file, ElfFile *elf_file);
 
 // returns 0 on success
-int parse_null_terminated_strings(char **, char *, int);
+int extract_section_names(ElfFile *elf, char *buffer);
 
 // returns 0 on success
 int parse_symbols(FILE *file, ElfFile *elf_file);
+
+// returns 0 on success
+int extract_symbol_names(ElfFile *elf_file, char *buffer);
 
 // returns 0 on success
 int destroy_elf_file(ElfFile *elf_file);

@@ -16,9 +16,13 @@ int main(int argc, char *argv[]) {
   ElfFile *elf_file = parse_elf_file(file);
   if (elf_file == NULL) {
     printf("FAILED\n");
+    return 0;
+  }
+  for (int i = 0; i < elf_file->elf_hdr->e_shnum; i++) {
+    printf("%s\n", elf_file->section_names[i]);
   }
   for (int i = 0; i < elf_file->sym_num; i++) {
-    printf("%s\n", elf_file->symbol_names[i]);
+    printf("%d %s\n", i, elf_file->symbol_names[i]);
   }
 
   rc = destroy_elf_file(elf_file);
