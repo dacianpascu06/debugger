@@ -1,5 +1,7 @@
 *.o
 !elf[0-9]*.asm
+!test[0-9]*.c
+test[0-9]
 elf[0-9]
 debugger
 main.o

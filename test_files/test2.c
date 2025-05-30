@@ -1,4 +1,4 @@
-int add(int a, int b) { return a + b; }
+int __attribute__((noinline)) add(int a, int b) { return a + b; }
 
 #include <stdio.h>
 int main() {
