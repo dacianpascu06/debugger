@@ -1,10 +1,14 @@
 #include "elf_parser/elf_parser.h"
+#include "utils/breakpoint_queue.h"
 #include "utils/utils.h"
+#include <bits/types/siginfo_t.h>
+#include <signal.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
 #include <sys/ptrace.h>
 #include <sys/reg.h>
 #include <sys/types.h>
@@ -13,6 +17,7 @@
 #include <unistd.h>
 
 uint64_t base_addr;
+BreakpointQueue queue;
 
 void setup(pid_t pid) {
   // we need to find the base virtual address for the file that was given by the
@@ -29,17 +34,8 @@ void setup(pid_t pid) {
   sscanf(line, "%lx-", &base_addr);
 }
 
-char *get_input() {
-  char *input = calloc(1, 20);
-  size_t input_len;
-  getline(&input, &input_len, stdin);
-  return input;
-}
-
 int main(int argc, char **argv) {
   DIE(argc < 2, "Argument number error");
-
-  struct user_regs_struct regs;
 
   pid_t pid = fork();
 
@@ -52,7 +48,12 @@ int main(int argc, char **argv) {
     DIE(1, strerror(errno));
   }
 
+  // init variables
   int *status = calloc(1, sizeof(int));
+  siginfo_t sig_info;
+  int rc;
+  struct user_regs_struct regs;
+  bp_queue_init(&queue);
 
   // This is the first moment the process is stopped by the kernel
   // with the SISTRAP signal when it detects the execv syscall
@@ -65,7 +66,6 @@ int main(int argc, char **argv) {
 
   // this function will help us calculate the base address in case the file is
   // PIE
-
   if (elf_file->elf_hdr->e_type != ET_EXEC) {
     setup(pid);
   }
@@ -74,26 +74,25 @@ int main(int argc, char **argv) {
   char name[10];
   scanf("%s", name);
 
-  printf("base address 0x%lx\n", base_addr);
-
   uint64_t address = get_function_address(elf_file, base_addr, name);
   DIE(address == 0, " function not found");
-  printf("0x%lx\n", address);
 
-  ptrace(PTRACE_SINGLESTEP, pid, NULL, NULL);
+  set_breakpoint(address, pid);
+
+  ptrace(PTRACE_CONT, pid, NULL, NULL);
 
   while (waitpid(pid, status, 0) && !WIFEXITED(*status)) {
-    ptrace(PTRACE_GETREGS, pid, NULL, &regs);
+    debug_breakpoint(pid);
+    get_breakpoint_context(pid, &sig_info, &regs);
 
-    if (regs.rax == 60) {
-      // exit system call
-      ptrace(PTRACE_CONT, pid, NULL, NULL);
-      continue;
-    }
+    DIE(sig_info.si_signo != SIGTRAP, "Stop wasn't triggered by sigtrap");
+    reset_breakpoint_data(pid, &regs);
 
-    // fprintf(stderr, "Value in RAX register :  %llu\n", regs.rax);
-    ptrace(PTRACE_SINGLESTEP, pid, NULL, NULL);
+    ptrace(PTRACE_CONT, pid, NULL, NULL);
   }
 
+  bp_queue_free(&queue);
+  free(status);
   destroy_elf_file(elf_file);
+  return 0;
 }

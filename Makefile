@@ -1,6 +1,6 @@
 CC = gcc
 CFLAGS = -Wall -g
-OBJ = main.o elf_parser/elf_parser.o utils/utils.o
+OBJ = main.o elf_parser/elf_parser.o utils/utils.o utils/breakpoint_queue.o
 
 all: debugger
 
@@ -13,8 +13,12 @@ main.o: main.c
 elf_parser/elf_parser.o: elf_parser/elf_parser.c elf_parser/elf_parser.h utils/utils.h
 	$(CC) $(CFLAGS) -c elf_parser/elf_parser.c -o elf_parser/elf_parser.o
 
-utils/utils.o: utils/utils.c utils/utils.h
+utils/utils.o: utils/utils.c utils/utils.h 
 	$(CC) $(CFLAGS) -c utils/utils.c -o utils/utils.o
+
+utils/brkpointqueue.o: utils/breakpoint_queue.c utils/breakpoint_queue.h
+	$(CC) $(CFLAGS) -c utils/breakpoint_queue.c -o utils/breakpoint_queue.o
+
 
 clean:
 	rm -f $(OBJ) debugger
