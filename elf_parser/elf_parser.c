@@ -204,7 +204,7 @@ int extract_symbol_names(ElfFile *elf_file, char *buffer) {
     char *name = buffer + elf_file->symbols[i]->st_name;
     int len = strlen(name);
 
-    elf_file->symbol_names[i] = malloc(len + 1);
+    elf_file->symbol_names[i] = calloc(1, len + 1);
     RETURN_FAILED(elf_file->symbol_names[i] == NULL, -1);
 
     memcpy(elf_file->symbol_names[i], name, len);

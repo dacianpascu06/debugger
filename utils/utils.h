@@ -18,23 +18,30 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-uint64_t get_function_address(ElfFile *elf_file, uint64_t base_addr,
-                              char *name);
-
-void set_breakpoint(uint64_t address, int pid);
-void debug_breakpoint(int pid);
-void get_breakpoint_context(int pid, siginfo_t *sig_info,
-                            struct user_regs_struct *regs);
-
-void reset_breakpoint_data(int pid, struct user_regs_struct *regs);
-
-extern BreakpointQueue queue;
+typedef struct {
+  pid_t target_pid;
+  ElfFile *elf_file;
+  uint64_t base_addr;
+  BreakpointQueue bp_queue;
+  siginfo_t sig_info;
+  struct user_regs_struct regs;
+} GlobalContext;
 
 typedef struct {
   char *command;
   char **args;
   int arg_count;
 } Input;
+
+uint64_t get_function_address(GlobalContext *, char *);
+
+void set_breakpoint(uint64_t, GlobalContext *);
+void debug_breakpoint(int pid);
+void get_breakpoint_context(GlobalContext *);
+int handle_input(GlobalContext *, Input *);
+void destroy_global_context(GlobalContext *context);
+
+void reset_breakpoint_data(GlobalContext *);
 
 Input *parse_input(const char *input_line);
 void free_input(Input *parsed_input);

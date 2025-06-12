@@ -16,22 +16,20 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-uint64_t base_addr;
-BreakpointQueue queue;
-
-void setup(pid_t pid) {
+void setup(GlobalContext *context) {
   // we need to find the base virtual address for the file that was given by the
   // ASLR + PIE mechanism
   // we will read /proc/pid/maps and get the first entry
   char file_name[64];
-  snprintf(file_name, sizeof(file_name), "/proc/%d/maps", pid);
+  snprintf(file_name, sizeof(file_name), "/proc/%d/maps", context->target_pid);
 
   FILE *proc_map = fopen(file_name, "r");
   DIE(proc_map == NULL, "error opening file, need sudo perms");
 
   char line[256];
   fgets(line, sizeof(line), proc_map);
-  sscanf(line, "%lx-", &base_addr);
+  sscanf(line, "%lx-", &context->base_addr);
+  fclose(proc_map);
 }
 
 int main(int argc, char **argv) {
@@ -50,10 +48,10 @@ int main(int argc, char **argv) {
 
   // init variables
   int *status = calloc(1, sizeof(int));
-  siginfo_t sig_info;
-  int rc;
-  struct user_regs_struct regs;
-  bp_queue_init(&queue);
+  GlobalContext *global_context = malloc(sizeof(GlobalContext));
+  DIE(global_context == NULL, "malloc error");
+  global_context->target_pid = pid;
+  bp_queue_init(&global_context->bp_queue);
   char *input_buffer = malloc(INPUT_BUFFER_LEN);
   DIE(input_buffer == NULL, "malloc error");
 
@@ -64,33 +62,34 @@ int main(int argc, char **argv) {
 
   FILE *file = fopen(argv[1], "r");
   DIE(file == NULL, "error opening file");
-  ElfFile *elf_file = parse_elf_file(file);
+  global_context->elf_file = parse_elf_file(file);
 
   // this function will help us calculate the base address in case the file is
   // PIE
-  if (elf_file->elf_hdr->e_type != ET_EXEC) {
-    setup(pid);
+  if (global_context->elf_file->elf_hdr->e_type != ET_EXEC) {
+    setup(global_context);
   }
 
   Input *input = get_command(input_buffer, INPUT_BUFFER_LEN);
-  if (input && input->command) {
-    printf("%s\n", input->command);
-  }
+  handle_input(global_context, input);
+  free_input(input);
 
   ptrace(PTRACE_CONT, pid, NULL, NULL);
 
   while (waitpid(pid, status, 0) && !WIFEXITED(*status)) {
-    debug_breakpoint(pid);
-    get_breakpoint_context(pid, &sig_info, &regs);
+    debug_breakpoint(global_context->target_pid);
+    get_breakpoint_context(global_context);
 
-    DIE(sig_info.si_signo != SIGTRAP, "Stop wasn't triggered by sigtrap");
-    reset_breakpoint_data(pid, &regs);
+    DIE(global_context->sig_info.si_signo != SIGTRAP,
+        "Stop wasn't triggered by sigtrap");
+    reset_breakpoint_data(global_context);
 
     ptrace(PTRACE_CONT, pid, NULL, NULL);
   }
 
-  bp_queue_free(&queue);
+  destroy_global_context(global_context);
   free(status);
-  destroy_elf_file(elf_file);
+  free(input_buffer);
+  fclose(file);
   return 0;
 }

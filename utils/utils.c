@@ -1,6 +1,9 @@
 #include "utils.h"
 #include <elf.h>
+#include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/user.h>
 
@@ -13,33 +16,34 @@ void debug_breakpoint(int pid) {
   printf("code %d\n", sig_info.si_code);
 }
 
-void get_breakpoint_context(int pid, siginfo_t *sig_info,
-                            struct user_regs_struct *regs) {
-  ptrace(PTRACE_GETREGS, pid, NULL, regs);
-  ptrace(PTRACE_GETSIGINFO, pid, NULL, sig_info);
+void get_breakpoint_context(GlobalContext *context) {
+  ptrace(PTRACE_GETREGS, context->target_pid, NULL, &context->regs);
+  ptrace(PTRACE_GETSIGINFO, context->target_pid, NULL, &context->sig_info);
 }
 
-void reset_breakpoint_data(int pid, struct user_regs_struct *regs) {
+void reset_breakpoint_data(GlobalContext *context) {
   // dequeue saved data
   Breakpoint bp;
-  bp_queue_dequeue(&queue, &bp);
+  bp_queue_dequeue(&context->bp_queue, &bp);
 
   // backtrack instruction pointer
-  regs->rip -= 1;
+  context->regs.rip -= 1;
 
-  DIE(regs->rip != bp.addr,
+  DIE(context->regs.rip != bp.addr,
       "instruction pointer differs from breakpoint address");
 
-  ptrace(PTRACE_SETREGS, pid, NULL, regs);
-  ptrace(PTRACE_POKEDATA, pid, regs->rip, bp.orig_instr);
+  ptrace(PTRACE_SETREGS, context->target_pid, NULL, &context->regs);
+  ptrace(PTRACE_POKEDATA, context->target_pid, (void *)context->regs.rip,
+         (void *)bp.orig_instr);
 }
 
-uint64_t get_function_address(ElfFile *elf_file, uint64_t base_addr,
-                              char *name) {
+uint64_t get_function_address(GlobalContext *context, char *name) {
 
   int found = -1;
+  ElfFile *elf_file = context->elf_file;
   for (int i = 0; i < elf_file->sym_num; i++) {
-    if (!strcmp(elf_file->symbol_names[i], name)) {
+    if (elf_file->symbol_names[i] != NULL &&
+        !strcmp(elf_file->symbol_names[i], name)) {
       found = i;
       break;
     }
@@ -52,15 +56,16 @@ uint64_t get_function_address(ElfFile *elf_file, uint64_t base_addr,
     RETURN_FAILED(ELF64_ST_TYPE(s_hdr->st_info) != STT_FUNC, 0);
   }
 
-  return s_hdr->st_value + base_addr;
+  return s_hdr->st_value + context->base_addr;
 }
 
-void set_breakpoint(uint64_t address, int pid) {
-  uint64_t saved_data = ptrace(PTRACE_PEEKTEXT, pid, (void *)address, NULL);
+void set_breakpoint(uint64_t address, GlobalContext *context) {
+  uint64_t saved_data =
+      ptrace(PTRACE_PEEKTEXT, context->target_pid, (void *)address, NULL);
   u_int64_t data_with_int3 = (saved_data & ~0xFF) | 0xCC;
-  bp_queue_enqueue(&queue, address, saved_data);
-  int rc =
-      ptrace(PTRACE_POKETEXT, pid, (void *)address, (void *)data_with_int3);
+  bp_queue_enqueue(&context->bp_queue, address, saved_data);
+  int rc = ptrace(PTRACE_POKETEXT, context->target_pid, (void *)address,
+                  (void *)data_with_int3);
   DIE(rc == -1, "error in setting breakpoint");
 }
 
@@ -147,4 +152,35 @@ Input *get_command(char *buffer, size_t buffer_size) {
     return NULL;
   }
   return parse_input(buffer);
+}
+
+int handle_input(GlobalContext *context, Input *in) {
+  uint64_t address;
+
+  if (!in->command) {
+    return -1;
+  }
+
+  if (!strcmp(in->command, "break")) {
+    if (in->arg_count == 0 || in->args[0] == NULL) {
+      printf("(debugger) Invalid address name\n");
+      return -1;
+    }
+    address = get_function_address(context, in->args[0]);
+
+    if (address == 0) {
+      printf("(debugger) Invalid address name\n");
+      return -1;
+    }
+
+    set_breakpoint(address, context);
+  }
+
+  return 0;
+}
+
+void destroy_global_context(GlobalContext *context) {
+  bp_queue_free(&context->bp_queue);
+  destroy_elf_file(context->elf_file);
+  free(context);
 }
