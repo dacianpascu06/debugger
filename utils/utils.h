@@ -30,6 +30,18 @@ void reset_breakpoint_data(int pid, struct user_regs_struct *regs);
 
 extern BreakpointQueue queue;
 
+typedef struct {
+  char *command;
+  char **args;
+  int arg_count;
+} Input;
+
+Input *parse_input(const char *input_line);
+void free_input(Input *parsed_input);
+Input *get_command(char *buffer, size_t buffer_size);
+
+#define INPUT_BUFFER_LEN 256
+
 #define DIE(assertion, call_description)                                       \
   do {                                                                         \
     if (assertion) {                                                           \

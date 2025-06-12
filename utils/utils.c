@@ -63,3 +63,88 @@ void set_breakpoint(uint64_t address, int pid) {
       ptrace(PTRACE_POKETEXT, pid, (void *)address, (void *)data_with_int3);
   DIE(rc == -1, "error in setting breakpoint");
 }
+
+Input *parse_input(const char *input_line) {
+  if (!input_line)
+    return NULL;
+
+  Input *parsed_input = malloc(sizeof(Input));
+  if (!parsed_input)
+    return NULL;
+
+  parsed_input->command = NULL;
+  parsed_input->args = NULL;
+  parsed_input->arg_count = 0;
+
+  char *input_copy = strdup(input_line);
+  if (!input_copy) {
+    free(parsed_input);
+    return NULL;
+  }
+
+  int token_count = 0;
+  char *temp_copy = strdup(input_line);
+  char *token = strtok(temp_copy, " \t\n");
+  while (token) {
+    token_count++;
+    token = strtok(NULL, " \t\n");
+  }
+  free(temp_copy);
+
+  if (token_count == 0) {
+    free(input_copy);
+    return parsed_input;
+  }
+
+  if (token_count > 1) {
+    parsed_input->args = malloc((token_count - 1) * sizeof(char *));
+    if (!parsed_input->args) {
+      free(input_copy);
+      free(parsed_input);
+      return NULL;
+    }
+  }
+
+  token = strtok(input_copy, " \t\n");
+  if (token) {
+    parsed_input->command = strdup(token);
+    token = strtok(NULL, " \t\n");
+
+    while (token && parsed_input->arg_count < token_count - 1) {
+      parsed_input->args[parsed_input->arg_count] = strdup(token);
+      parsed_input->arg_count++;
+      token = strtok(NULL, " \t\n");
+    }
+  }
+
+  free(input_copy);
+  return parsed_input;
+}
+
+void free_input(Input *parsed_input) {
+  if (!parsed_input)
+    return;
+
+  if (parsed_input->command) {
+    free(parsed_input->command);
+  }
+
+  if (parsed_input->args) {
+    for (int i = 0; i < parsed_input->arg_count; i++) {
+      if (parsed_input->args[i]) {
+        free(parsed_input->args[i]);
+      }
+    }
+    free(parsed_input->args);
+  }
+
+  free(parsed_input);
+}
+
+Input *get_command(char *buffer, size_t buffer_size) {
+  printf("(debugger) ");
+  if (!fgets(buffer, buffer_size, stdin)) {
+    return NULL;
+  }
+  return parse_input(buffer);
+}

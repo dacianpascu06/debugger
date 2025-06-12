@@ -54,6 +54,8 @@ int main(int argc, char **argv) {
   int rc;
   struct user_regs_struct regs;
   bp_queue_init(&queue);
+  char *input_buffer = malloc(INPUT_BUFFER_LEN);
+  DIE(input_buffer == NULL, "malloc error");
 
   // This is the first moment the process is stopped by the kernel
   // with the SISTRAP signal when it detects the execv syscall
@@ -70,14 +72,10 @@ int main(int argc, char **argv) {
     setup(pid);
   }
 
-  // function name
-  char name[10];
-  scanf("%s", name);
-
-  uint64_t address = get_function_address(elf_file, base_addr, name);
-  DIE(address == 0, " function not found");
-
-  set_breakpoint(address, pid);
+  Input *input = get_command(input_buffer, INPUT_BUFFER_LEN);
+  if (input && input->command) {
+    printf("%s\n", input->command);
+  }
 
   ptrace(PTRACE_CONT, pid, NULL, NULL);
 
