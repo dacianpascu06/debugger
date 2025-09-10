@@ -178,6 +178,28 @@ int handle_input(GlobalContext *context, Input *in) {
     return SUCCESS;
   }
 
+  if (!strcmp(in->command, "regs")) {
+    printf("Registers:\n");
+    printf("RAX: 0x%llx\n", context->regs.rax);
+    printf("RBX: 0x%llx\n", context->regs.rbx);
+    printf("RCX: 0x%llx\n", context->regs.rcx);
+    printf("RDX: 0x%llx\n", context->regs.rdx);
+    printf("RSI: 0x%llx\n", context->regs.rsi);
+    printf("RDI: 0x%llx\n", context->regs.rdi);
+    printf("RBP: 0x%llx\n", context->regs.rbp);
+    printf("RSP: 0x%llx\n", context->regs.rsp);
+    printf("R8 : 0x%llx\n", context->regs.r8);
+    printf("R9 : 0x%llx\n", context->regs.r9);
+    printf("R10: 0x%llx\n", context->regs.r10);
+    printf("R11: 0x%llx\n", context->regs.r11);
+    printf("R12: 0x%llx\n", context->regs.r12);
+    printf("R13: 0x%llx\n", context->regs.r13);
+    printf("R14: 0x%llx\n", context->regs.r14);
+    printf("R15: 0x%llx\n", context->regs.r15);
+    printf("RIP: 0x%llx\n", context->regs.rip);
+    return SUCCESS;
+  }
+
   if (!strcmp(in->command, "break")) {
     if (in->arg_count == 0 || in->args[0] == NULL) {
       printf("(debugger) Invalid function name\n");
