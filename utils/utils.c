@@ -161,22 +161,55 @@ int handle_input(GlobalContext *context, Input *in) {
     return -1;
   }
 
+  if (!strcmp(in->command, "run")) {
+    return RUN;
+  }
+
+  if (!strcmp(in->command, "exit")) {
+    return EXIT;
+  }
+
+  if (!strcmp(in->command, "first")) {
+    printf("first arg is %llu\n", context->regs.rdi);
+    return SUCCESS;
+  }
+  if (!strcmp(in->command, "second")) {
+    printf("second arg is %llu\n", context->regs.rsi);
+    return SUCCESS;
+  }
+
   if (!strcmp(in->command, "break")) {
     if (in->arg_count == 0 || in->args[0] == NULL) {
-      printf("(debugger) Invalid address name\n");
-      return -1;
+      printf("(debugger) Invalid function name\n");
+      return FAILURE;
     }
     address = get_function_address(context, in->args[0]);
 
     if (address == 0) {
-      printf("(debugger) Invalid address name\n");
-      return -1;
+      printf("(debugger) Invalid function name \n");
+      return FAILURE;
     }
 
     set_breakpoint(address, context);
+    printf("(debugger) Breakpoint set at address 0x%lx\n", address);
+    return SUCCESS;
   }
 
-  return 0;
+  printf("(debugger) Invalid command\n");
+  return FAILURE;
+}
+
+int handle_commands(GlobalContext *context, char *input_buffer) {
+  int rc;
+  while (1) {
+    Input *input = get_command(input_buffer, INPUT_BUFFER_LEN);
+    rc = handle_input(context, input);
+    free_input(input);
+
+    if (rc == EXIT || rc == RUN) {
+      return rc;
+    }
+  }
 }
 
 void destroy_global_context(GlobalContext *context) {

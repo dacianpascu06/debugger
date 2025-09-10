@@ -32,6 +32,14 @@ void setup(GlobalContext *context) {
   fclose(proc_map);
 }
 
+void exit_routine(GlobalContext *context, int *status, char *input_buffer,
+                  FILE *file) {
+  destroy_global_context(context);
+  free(status);
+  free(input_buffer);
+  fclose(file);
+}
+
 int main(int argc, char **argv) {
   DIE(argc < 2, "Argument number error");
 
@@ -48,7 +56,8 @@ int main(int argc, char **argv) {
 
   // init variables
   int *status = calloc(1, sizeof(int));
-  GlobalContext *global_context = malloc(sizeof(GlobalContext));
+  int rc = 0;
+  GlobalContext *global_context = calloc(1, (sizeof(GlobalContext)));
   DIE(global_context == NULL, "malloc error");
   global_context->target_pid = pid;
   bp_queue_init(&global_context->bp_queue);
@@ -70,9 +79,12 @@ int main(int argc, char **argv) {
     setup(global_context);
   }
 
-  Input *input = get_command(input_buffer, INPUT_BUFFER_LEN);
-  handle_input(global_context, input);
-  free_input(input);
+  rc = handle_commands(global_context, input_buffer);
+
+  if (rc == EXIT) {
+    exit_routine(global_context, status, input_buffer, file);
+    return 0;
+  }
 
   ptrace(PTRACE_CONT, pid, NULL, NULL);
 
@@ -84,12 +96,15 @@ int main(int argc, char **argv) {
         "Stop wasn't triggered by sigtrap");
     reset_breakpoint_data(global_context);
 
+    rc = handle_commands(global_context, input_buffer);
+
+    if (rc == EXIT) {
+      exit_routine(global_context, status, input_buffer, file);
+      return 0;
+    }
     ptrace(PTRACE_CONT, pid, NULL, NULL);
   }
 
-  destroy_global_context(global_context);
-  free(status);
-  free(input_buffer);
-  fclose(file);
+  exit_routine(global_context, status, input_buffer, file);
   return 0;
 }

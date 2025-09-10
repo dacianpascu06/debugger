@@ -33,6 +33,13 @@ typedef struct {
   int arg_count;
 } Input;
 
+enum {
+  FAILURE = -1,
+  SUCCESS = 0,
+  EXIT = 1,
+  RUN = 2,
+};
+
 uint64_t get_function_address(GlobalContext *, char *);
 
 void set_breakpoint(uint64_t, GlobalContext *);
@@ -40,6 +47,7 @@ void debug_breakpoint(int pid);
 void get_breakpoint_context(GlobalContext *);
 int handle_input(GlobalContext *, Input *);
 void destroy_global_context(GlobalContext *context);
+int handle_commands(GlobalContext *context, char *input_buffer);
 
 void reset_breakpoint_data(GlobalContext *);
 

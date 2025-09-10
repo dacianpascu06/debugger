@@ -1,4 +1,4 @@
-CC = gcc
+CC = gcc 
 CFLAGS = -Wall -g
 OBJ = main.o elf_parser/elf_parser.o utils/utils.o utils/breakpoint_queue.o
 
